@@ -1,28 +1,32 @@
-from flask import Blueprint, current_app, request, jsonify
+from flask import Blueprint, request, jsonify
 import json
+import bcrypt
+from db_sqlite import query_db
 
 auth_bp = Blueprint('auth', __name__)
-
-# Carga el archivo JSON de base de datos
-def load_db():
-    # app.config['DATABASE_FILE']
-    with open(current_app.config['DATABASE_FILE']) as f:
-        return json.load(f)
-
-def save_db(data):
-    with open(current_app.config['DATABASE_FILE'], 'w') as f:
-        json.dump(data, f, indent=2)
 
 @auth_bp.route('/login', methods=["POST"])
 def login():
     data = request.json # Datos que vienen de postman (cliente)
-    db = load_db() # Datos que estan en el servidor (DB)
-    for user in db["users"]:
-        if user['username'] == data["username"] and user["password"] == data["password"]:
-            return jsonify({ 'mensaje': 'Login exitoso', 'user_id': user["id"] }), 200
+    # db = load_db() # Datos que estan en el servidor (DB)
+    user = query_db(
+        'SELECT * FROM users WHERE username = ?',
+        (data['username'], ), one=True
+    )
+
+    if user:
+        stored_hash = user['password']
+
+        # Contraseñas: 1: manda el cliente, 2: En base de datos
+        password_bytes = data['password'].encode('utf-8')
+        stored_hash_bytes = stored_hash.encode('utf-8')
+
+        if bcrypt.checkpw(password_bytes, stored_hash_bytes):
+            return jsonify({ 'mensaje': 'Login exitoso', 'user_id': user['id'] }), 200
         
     return jsonify({ 'error': 'Credenciales inválidas' }), 401
 
+"""
 @auth_bp.route('/register', methods=["POST"])
 def register():
     data = request.json
@@ -39,8 +43,9 @@ def register():
     db["users"].append(newUser)
     save_db(db)
     return jsonify({ 'message:' 'Registrado correctamente' }), 201
+"""
 
 @auth_bp.route('/users', methods=["GET"])
 def get_users():
-    db = load_db()
-    return jsonify(db["users"]), 200
+    users = query_db('SELECT id, username FROM users')
+    return jsonify([dict(user) for user in users]), 200
